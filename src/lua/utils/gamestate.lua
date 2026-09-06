@@ -317,6 +317,66 @@ local function extract_card_cost(card)
 end
 
 -- ==========================================================================
+-- Joker Ability Numerics (virentic fork, feat/joker-ability-numerics)
+-- ==========================================================================
+--
+-- Exposes the raw numeric fields balatro-bot's `balatro-math` engine
+-- needs to model scaling jokers (Ride the Bus, Wee Joker, Hologram,
+-- ...), verified directly against the base game's own Lua source
+-- (`card.lua`'s `generate_UIBox_ability_table`/`calculate_joker` --
+-- e.g. `self.ability.mult` for Ride the Bus, `self.ability.x_mult` for
+-- Hologram, `self.ability.extra` for Wee Joker/To Do List/Egg, which
+-- is sometimes a plain number and sometimes itself a table). Nothing
+-- removed, nothing renamed from upstream's `gamestate.lua` -- this is
+-- additive only.
+
+---Shallow-copies a joker's live numeric ability state (only the fields
+---balatro-math's `JOKER_PARAMS` table actually reads -- an allowlist,
+---not "copy everything", so this never leaks unrelated internal state).
+---@param card table The game card object
+---@return table|nil ability The numeric ability subtable, or nil if this isn't a joker
+local function extract_joker_ability(card)
+  if not (card.ability and card.ability.set == "Joker") then
+    return nil
+  end
+
+  local ability = {}
+  local a = card.ability
+  if type(a.mult) == "number" then
+    ability.mult = a.mult
+  end
+  if type(a.x_mult) == "number" then
+    ability.x_mult = a.x_mult
+  end
+  if type(a.x_chips) == "number" then
+    ability.x_chips = a.x_chips
+  end
+  if type(a.t_mult) == "number" then
+    ability.t_mult = a.t_mult
+  end
+  if type(a.t_chips) == "number" then
+    ability.t_chips = a.t_chips
+  end
+  -- `extra` varies per joker: a plain number (Egg's dollar bonus) or a
+  -- table (Wee Joker's {chips=, chip_mod=}, To Do List's {dollars=}).
+  -- Copied as-is either way -- the Python adapter's JOKER_PARAMS table
+  -- knows which shape each joker id uses.
+  if type(a.extra) == "number" or type(a.extra) == "table" then
+    ability.extra = a.extra
+  end
+  if type(a.to_do_poker_hand) == "string" then
+    ability.to_do_poker_hand = a.to_do_poker_hand
+  end
+
+  -- nil, not {}, when nothing above matched -- so a stateless joker's
+  -- Card never grows an empty `ability` key.
+  if next(ability) == nil then
+    return nil
+  end
+  return ability
+end
+
+-- ==========================================================================
 -- Card Extractor
 -- ==========================================================================
 
@@ -357,7 +417,7 @@ local function extract_card(card)
     end
   end
 
-  return {
+  local extracted = {
     id = card.sort_id or 0,
     key = key,
     set = set,
@@ -367,6 +427,13 @@ local function extract_card(card)
     state = extract_card_state(card),
     cost = extract_card_cost(card),
   }
+
+  local ability = extract_joker_ability(card)
+  if ability then
+    extracted.ability = ability
+  end
+
+  return extracted
 end
 
 -- ==========================================================================
@@ -469,6 +536,76 @@ local function extract_round_info()
   end
 
   return round
+end
+
+-- ==========================================================================
+-- Round-Level Joker Param Cards (virentic fork, feat/joker-ability-numerics)
+-- ==========================================================================
+--
+-- The Idol/Ancient Joker/Mail-In Rebate/Castle each fix a rank and/or
+-- suit for the whole round, stored as plain `{suit=, rank=}` tables at
+-- `G.GAME.current_round.{idol_card,ancient_card,mail_card,castle_card}`
+-- (verified against `functions/common_events.lua`'s
+-- `reset_idol_card`/`reset_mail_rank`/`reset_ancient_card`/
+-- `reset_castle_card`, which are the only writers). `rank`/`suit` use
+-- the same full-name strings (`"Ace"`, `"Spades"`) as everywhere else
+-- in this file, so the existing `convert_rank_to_enum`/
+-- `convert_suit_to_enum` apply unchanged.
+
+---Extracts one round-level param card (`{suit=, rank=}`, either
+---field optionally absent depending on which joker it belongs to)
+---into the bridge's rank/suit enum, omitting a field the source table
+---doesn't have.
+---@param source_card table|nil e.g. `G.GAME.current_round.idol_card`
+---@return table|nil param_card `{suit=, rank=}` (only present fields), or nil if `source_card` is nil
+local function extract_round_param_card(source_card)
+  if not source_card then
+    return nil
+  end
+  local out = {}
+  if source_card.suit then
+    out.suit = convert_suit_to_enum(source_card.suit)
+  end
+  if source_card.rank then
+    out.rank = convert_rank_to_enum(source_card.rank)
+  end
+  if next(out) == nil then
+    return nil
+  end
+  return out
+end
+
+---Extracts every round-level param card the engine's `JOKER_PARAMS`
+---table needs (`the-idol`/`ancient-joker`/`mail-in-rebate`/`castle`).
+---Only present at all once at least one of the four jokers/blinds has
+---actually initialised it this round -- absent, not `{}`, otherwise.
+---@return table|nil current_round `{idolCard=, ancientCard=, mailCard=, castleCard=}` (only present ones)
+local function extract_current_round_param_cards()
+  if not G or not G.GAME or not G.GAME.current_round then
+    return nil
+  end
+  local cr = G.GAME.current_round
+  local out = {}
+  local idol = extract_round_param_card(cr.idol_card)
+  if idol then
+    out.idolCard = idol
+  end
+  local ancient = extract_round_param_card(cr.ancient_card)
+  if ancient then
+    out.ancientCard = ancient
+  end
+  local mail = extract_round_param_card(cr.mail_card)
+  if mail then
+    out.mailCard = mail
+  end
+  local castle = extract_round_param_card(cr.castle_card)
+  if castle then
+    out.castleCard = castle
+  end
+  if next(out) == nil then
+    return nil
+  end
+  return out
 end
 
 -- ==========================================================================
@@ -774,6 +911,14 @@ function gamestate.get_gamestate()
 
     -- Round info
     state_data.round = extract_round_info()
+
+    -- Round-level joker param cards (virentic fork): the-idol/
+    -- ancient-joker/mail-in-rebate/castle's fixed rank/suit for this
+    -- round, when initialised.
+    local current_round = extract_current_round_param_cards()
+    if current_round then
+      state_data.current_round = current_round
+    end
 
     -- Blinds info
     state_data.blinds = gamestate.get_blinds_info()
