@@ -145,6 +145,29 @@ class TestSetEndpoint:
         gamestate = assert_gamestate_response(response)
         assert gamestate["round"]["discards_left"] == 10
 
+    def test_set_negative_blind_chips(self, client: httpx.Client) -> None:
+        """Test that set fails when blind_chips is not a positive integer."""
+        gamestate = load_fixture(client, "set", "state-SELECTING_HAND")
+        assert gamestate["state"] == "SELECTING_HAND"
+        response = api(client, "set", {"blind_chips": 0})
+        assert_error_response(
+            response,
+            "BAD_REQUEST",
+            "blind_chips must be a positive integer",
+        )
+
+    def test_set_blind_chips(self, client: httpx.Client) -> None:
+        """Test that set succeeds and the live target is reported back in
+        `blinds.<current>.score` (M15: calibrated difficulty)."""
+        gamestate = load_fixture(client, "set", "state-SELECTING_HAND")
+        assert gamestate["state"] == "SELECTING_HAND"
+        response = api(client, "set", {"blind_chips": 1234})
+        after = assert_gamestate_response(response)
+        current = next(
+            blind for blind in after["blinds"].values() if blind["status"] == "CURRENT"
+        )
+        assert current["score"] == 1234
+
     def test_set_shop_from_selecting_hand(self, client: httpx.Client) -> None:
         """Test that set fails when shop is called from SELECTING_HAND state."""
         gamestate = load_fixture(client, "set", "state-SELECTING_HAND")

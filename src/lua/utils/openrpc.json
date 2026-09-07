@@ -690,6 +690,15 @@
           "schema": {
             "type": "boolean"
           }
+        },
+        {
+          "name": "blind_chips",
+          "description": "New chip target for the current blind (must be >= 1)",
+          "required": false,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          }
         }
       ],
       "result": {

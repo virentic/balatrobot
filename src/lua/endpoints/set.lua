@@ -12,6 +12,7 @@
 ---@field hands integer? New number of hands left number
 ---@field discards integer? New number of discards left number
 ---@field shop boolean? Re-stock shop with new items
+---@field blind_chips integer? New chip target for the current blind (live `G.GAME.blind.chips`, distinct from `chips` which is the player's current chip count)
 
 -- ==========================================================================
 -- Set Endpoint
@@ -60,6 +61,11 @@ return {
       required = false,
       description = "Re-stock shop with new items",
     },
+    blind_chips = {
+      type = "integer",
+      required = false,
+      description = "New chip target for the current blind",
+    },
   },
 
   requires_state = nil,
@@ -87,6 +93,7 @@ return {
       and args.hands == nil
       and args.discards == nil
       and args.shop == nil
+      and args.blind_chips == nil
     then
       send_response({
         message = "Must provide at least one field to set",
@@ -165,6 +172,29 @@ return {
         return
       end
       G.GAME.current_round.discards_left = args.discards
+    end
+
+    -- Set blind_chips (M15: calibrated difficulty via an engine-estimated
+    -- chip target -- distinct from `chips`, the player's current score)
+    if args.blind_chips then
+      if args.blind_chips < 1 then
+        send_response({
+          message = "blind_chips must be a positive integer",
+          name = BB_ERROR_NAMES.BAD_REQUEST,
+        })
+        return
+      end
+      if not G.GAME.blind then
+        send_response({
+          message = "No active blind to set blind_chips on",
+          name = BB_ERROR_NAMES.INVALID_STATE,
+        })
+        return
+      end
+      G.GAME.blind.chips = args.blind_chips
+      if G.GAME.blind.chip_text ~= nil then
+        G.GAME.blind.chip_text = number_format(args.blind_chips)
+      end
     end
 
     if args.shop then

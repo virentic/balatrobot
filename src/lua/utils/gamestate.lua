@@ -788,6 +788,13 @@ function gamestate.get_blinds_info()
     -- Set status
     if blind_states.Small then
       blinds.small.status = convert_status_to_enum(blind_states.Small)
+      -- M15: the currently-selected blind's score must report the live
+      -- `G.GAME.blind.chips` (set by `set(blind_chips=)`), not the
+      -- formula above -- they silently disagree once `blind_chips` has
+      -- been set for a calibrated scenario.
+      if blind_states.Small == "Current" and G.GAME.blind and G.GAME.blind.chips then
+        blinds.small.score = G.GAME.blind.chips
+      end
     end
 
     -- Get tag information
@@ -812,6 +819,9 @@ function gamestate.get_blinds_info()
     -- Set status
     if blind_states.Big then
       blinds.big.status = convert_status_to_enum(blind_states.Big)
+      if blind_states.Big == "Current" and G.GAME.blind and G.GAME.blind.chips then
+        blinds.big.score = G.GAME.blind.chips
+      end
     end
 
     -- Get tag information
@@ -836,6 +846,9 @@ function gamestate.get_blinds_info()
     -- Set status
     if blind_states.Boss then
       blinds.boss.status = convert_status_to_enum(blind_states.Boss)
+      if blind_states.Boss == "Current" and G.GAME.blind and G.GAME.blind.chips then
+        blinds.boss.score = G.GAME.blind.chips
+      end
     end
   else
     -- Fallback if boss blind not yet determined
