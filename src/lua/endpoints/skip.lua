@@ -60,10 +60,22 @@ return {
       blocking = true,
       func = function()
         local blinds = BB_GAMESTATE.get_blinds_info()
-        local done = (
+        -- A Charm/Meteor/Ethereal/Standard/Buffoon tag opens its free
+        -- pack right away (SMODS_BOOSTER_OPENED); the skip itself is
+        -- complete then too -- waiting for BLIND_SELECT would deadlock
+        -- the single-client server (the pack can't be walked while
+        -- this request is pending).
+        local back_at_select = (
           G.STATE == G.STATES.BLIND_SELECT
           and G.GAME.blind_on_deck ~= nil
           and G.blind_select_opts ~= nil
+        )
+        local pack_open = G.STATE == G.STATES.SMODS_BOOSTER_OPENED
+          and G.pack_cards
+          and not G.pack_cards.REMOVED
+          and G.pack_cards.cards[1]
+        local done = (
+          (back_at_select or pack_open)
           and blinds[current_blind_key].status == "SKIPPED"
         )
         if done then

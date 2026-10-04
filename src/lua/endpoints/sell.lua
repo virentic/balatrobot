@@ -125,8 +125,7 @@ return {
         local current_area = sell_type == "joker" and G.jokers or G.consumeables
         local current_array = current_area.cards
 
-        -- 1. Card count decreased by 1
-        local count_decreased = (current_area.config.card_count == initial_count - 1)
+        -- 1. (count check dropped: see below)
 
         -- 2. Money increased by sell_cost
         local money_increased = (G.GAME.dollars == expected_money)
@@ -147,7 +146,10 @@ return {
         local valid_state = (G.STATE == G.STATES.SHOP or G.STATE == G.STATES.SELECTING_HAND)
 
         -- All conditions must be met
-        if count_decreased and money_increased and card_gone and state_stable and valid_state then
+        -- `count_decreased` is not required: selling Invisible Joker
+        -- copies another joker in the same event chain, so the count
+        -- never drops -- `card_gone` is the sale itself.
+        if money_increased and card_gone and state_stable and valid_state then
           sendDebugMessage("Return sell()", "BB.ENDPOINTS")
           send_response(BB_GAMESTATE.get_gamestate())
           return true
